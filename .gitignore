@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+artemis-env/
+.venv/
+env/
+venv/
+
+# Data (large files)
+data/raw/
+data/processed/images/
+*.zip
+*.tar.gz
+
+# Model checkpoints (large files)
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.h5
+!checkpoints/.gitkeep
+
+# Outputs
+outputs/
+logs/
+runs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# other files
+docs/progress
