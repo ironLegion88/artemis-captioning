@@ -128,10 +128,6 @@ python scripts/predict.py --image path/to/image.jpg --model checkpoints/best_mod
 - gensim
 - See `requirements.txt` for complete list
 
-## Authors
-
-[Your Name]
-
 ## References
 
 1. Achlioptas et al., "ArtEmis: Affective Language for Visual Art", CVPR 2021
