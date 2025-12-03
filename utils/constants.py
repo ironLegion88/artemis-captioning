@@ -18,6 +18,7 @@ WIKIART_DIR = RAW_DATA_DIR / "wikiart"
 ARTEMIS_CSV = ARTEMIS_DIR / "artemis_dataset_release_v0.csv"
 
 # Processed data paths
+PROCESSED_DIR = PROCESSED_DATA_DIR  # Alias for convenience
 PROCESSED_IMAGES_DIR = PROCESSED_DATA_DIR / "images"
 PROCESSED_CAPTIONS_DIR = PROCESSED_DATA_DIR / "captions"
 SPLITS_DIR = PROCESSED_DATA_DIR / "splits"
@@ -54,6 +55,10 @@ SPECIAL_TOKENS = {
 TRAIN_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
+
+# Dataset subset size (for memory constraints)
+NUM_IMAGES_SUBSET = 5000  # Select 5,000 images from 81,444 total
+MIN_CAPTIONS_PER_IMAGE = 3  # Ensure each image has at least 3 captions
 
 # Training hyperparameters
 BATCH_SIZE = 16
@@ -100,8 +105,9 @@ ARTEMIS_EMOTIONS = [
 RANDOM_SEED = 42
 
 # Device configuration
-DEVICE = 'cuda' if os.environ.get('CUDA_VISIBLE_DEVICES') else 'cpu'
-USE_AMP = True  # Mixed precision training
+DEVICE = 'cpu'  # No GPU available (i5-1235U)
+USE_AMP = True  # Mixed precision training (FP16) - critical for memory efficiency
+NUM_WORKERS = 0  # DataLoader workers (0 for Windows compatibility)
 
 # Logging
 LOG_INTERVAL = 50  # Log every N batches
