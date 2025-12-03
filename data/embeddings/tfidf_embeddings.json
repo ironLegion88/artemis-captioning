@@ -1,0 +1,11 @@
+{
+  "embedding_type": "tfidf",
+  "vocab_size": 10000,
+  "embedding_dim": 256,
+  "shape": [
+    10000,
+    256
+  ],
+  "mean": 0.00029947001942452625,
+  "std": 0.06814864270305122
+}
