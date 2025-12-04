@@ -28,6 +28,9 @@ outputs/
 logs/
 runs/
 
+# Checkpoints
+checkpoints/
+
 # Jupyter
 .ipynb_checkpoints/
 
