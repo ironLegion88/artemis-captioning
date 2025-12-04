@@ -21,6 +21,113 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+class BLEUScore:
+    """
+    BLEU score calculator for image captioning evaluation.
+    
+    Used by training scripts to compute BLEU scores during validation.
+    """
+    
+    def __init__(self, idx_to_word: Dict[int, str], word_to_idx: Dict[str, int]):
+        """
+        Initialize BLEU scorer.
+        
+        Args:
+            idx_to_word: Mapping from token indices to words
+            word_to_idx: Mapping from words to token indices
+        """
+        self.idx_to_word = idx_to_word
+        self.word_to_idx = word_to_idx
+        self.pad_idx = word_to_idx.get('<PAD>', 0)
+        self.start_idx = word_to_idx.get('<START>', 1)
+        self.end_idx = word_to_idx.get('<END>', 2)
+    
+    def decode(self, token_ids: List[int]) -> str:
+        """Convert token IDs to text."""
+        words = []
+        for idx in token_ids:
+            if idx in [self.pad_idx, self.start_idx, self.end_idx]:
+                continue
+            word = self.idx_to_word.get(idx, '<UNK>')
+            words.append(word)
+        return ' '.join(words)
+    
+    def compute_bleu(self, references: List[List[int]], hypothesis: List[int], n: int = 4) -> float:
+        """
+        Compute BLEU-n score.
+        
+        Args:
+            references: List of reference token ID sequences
+            hypothesis: Hypothesis token ID sequence
+            n: Maximum n-gram size
+        
+        Returns:
+            BLEU-n score
+        """
+        # Decode to text
+        ref_texts = [self.decode(ref) for ref in references]
+        hyp_text = self.decode(hypothesis)
+        
+        # Tokenize
+        ref_tokens = [text.split() for text in ref_texts]
+        hyp_tokens = hyp_text.split()
+        
+        if len(hyp_tokens) == 0:
+            return 0.0
+        
+        # Compute n-gram precisions
+        precisions = []
+        for i in range(1, n + 1):
+            hyp_ngrams = self._get_ngrams(hyp_tokens, i)
+            if not hyp_ngrams:
+                precisions.append(0.0)
+                continue
+            
+            # Count matches across all references
+            max_counts = Counter()
+            for ref in ref_tokens:
+                ref_ngrams = self._get_ngrams(ref, i)
+                for ngram, count in ref_ngrams.items():
+                    max_counts[ngram] = max(max_counts[ngram], count)
+            
+            # Clipped counts
+            clipped = sum(min(count, max_counts.get(ngram, 0)) 
+                         for ngram, count in hyp_ngrams.items())
+            total = sum(hyp_ngrams.values())
+            
+            precisions.append(clipped / total if total > 0 else 0.0)
+        
+        # Geometric mean of precisions
+        if any(p == 0 for p in precisions):
+            return 0.0
+        
+        log_precisions = [math.log(p) for p in precisions]
+        avg_log_precision = sum(log_precisions) / len(log_precisions)
+        
+        # Brevity penalty
+        ref_len = min(len(ref) for ref in ref_tokens)
+        hyp_len = len(hyp_tokens)
+        
+        if hyp_len >= ref_len:
+            bp = 1.0
+        else:
+            bp = math.exp(1 - ref_len / hyp_len)
+        
+        return bp * math.exp(avg_log_precision)
+    
+    def _get_ngrams(self, tokens: List[str], n: int) -> Counter:
+        """Get n-grams from tokens."""
+        ngrams = Counter()
+        for i in range(len(tokens) - n + 1):
+            ngram = tuple(tokens[i:i+n])
+            ngrams[ngram] += 1
+        return ngrams
+    
+    def __call__(self, references: List[List[int]], hypothesis: List[int]) -> float:
+        """Compute BLEU-4 score (default)."""
+        return self.compute_bleu(references, hypothesis, n=4)
+
+
 def get_ngrams(tokens: List[str], n: int) -> Counter:
     """
     Extract n-grams from a list of tokens.
