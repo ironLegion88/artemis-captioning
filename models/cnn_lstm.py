@@ -352,7 +352,7 @@ class LSTMDecoder(nn.Module):
             # LSTM forward
             lstm_out, (h, c) = self.lstm(
                 lstm_input,
-                (h[:, :batch_size_t], c[:, :batch_size_t])
+                (h[:, :batch_size_t].contiguous(), c[:, :batch_size_t].contiguous())
             )
             
             # Predict next word
