@@ -110,6 +110,8 @@ class LimitedLoader:
     def __init__(self, loader, max_batches):
         self.loader = loader
         self.max_batches = max_batches
+        self.batch_size = loader.batch_size
+        self.dataset = loader.dataset
     
     def __iter__(self):
         for i, batch in enumerate(self.loader):
