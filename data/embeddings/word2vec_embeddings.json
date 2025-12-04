@@ -1,0 +1,11 @@
+{
+  "embedding_type": "word2vec",
+  "vocab_size": 10000,
+  "embedding_dim": 300,
+  "shape": [
+    10000,
+    300
+  ],
+  "mean": -0.0019659476226895293,
+  "std": 0.1411994658928275
+}
