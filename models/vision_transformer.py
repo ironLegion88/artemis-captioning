@@ -19,7 +19,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any
 
 import sys
 import os
@@ -403,6 +403,25 @@ class TransformerDecoder(nn.Module):
                 break
         
         return generated.squeeze(0), None  # Return tokens, no attention weights for now
+    
+    def predict(
+        self,
+        encoder_out: torch.Tensor,
+        max_length: int = 30
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Alias for generate() to match CNN+LSTM decoder interface.
+        
+        Used by Trainer for validation caption generation.
+        
+        Args:
+            encoder_out: Encoder output (1, src_len, embed_dim)
+            max_length: Maximum caption length
+        
+        Returns:
+            Tuple of (generated_tokens, attention_weights)
+        """
+        return self.generate(encoder_out, max_length)
 
 
 class VisionTransformerCaptioning(nn.Module):
@@ -471,37 +490,58 @@ class VisionTransformerCaptioning(nn.Module):
         self,
         images: torch.Tensor,
         captions: torch.Tensor,
-        caption_padding_mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+        caption_lengths: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int], torch.Tensor]:
         """
         Forward pass for training.
+        
+        Made compatible with CNN+LSTM interface for unified training pipeline.
         
         Args:
             images: Input images (batch, 3, H, W)
             captions: Target captions (batch, seq_len)
-            caption_padding_mask: Padding mask for captions
+            caption_lengths: Length of each caption (batch,)
         
         Returns:
-            Logits (batch, seq_len, vocab_size)
+            Tuple of:
+                - predictions: Output logits (batch, max_len, vocab_size)
+                - alphas: Attention weights (dummy for ViT, zeros)
+                - sorted_captions: Captions sorted by length (same as input for ViT)
+                - decode_lengths: Caption lengths (same as input for ViT)
+                - sort_ind: Sort indices (identity for ViT)
         """
+        batch_size = images.size(0)
+        device = images.device
+        
         # Encode images
         memory = self.encoder(images)
         
-        # Create padding mask from captions (PAD = 0)
-        # Must be boolean for PyTorch transformer
-        if caption_padding_mask is None:
-            caption_padding_mask = (captions == 0).bool()
-        else:
-            caption_padding_mask = caption_padding_mask.bool()
+        # Create padding mask from caption lengths
+        max_len = captions.size(1)
+        seq_range = torch.arange(max_len, device=device).unsqueeze(0)
+        caption_padding_mask = seq_range >= caption_lengths.unsqueeze(1)
         
         # Decode
         logits = self.decoder(
             captions,
             memory,
-            tgt_key_padding_mask=caption_padding_mask
+            tgt_key_padding_mask=caption_padding_mask.bool()
         )
         
-        return logits
+        # Create compatible return values
+        # Alphas: dummy attention weights (ViT uses internal attention)
+        # Shape: (batch, max_len, num_patches) to match CNN+LSTM's (batch, max_len, num_pixels)
+        num_patches = (images.size(2) // 16) * (images.size(3) // 16)  # Approximate
+        alphas = torch.zeros(batch_size, max_len, num_patches, device=device)
+        
+        # No sorting needed for ViT (CNN+LSTM sorts by length for pack_padded_sequence)
+        sort_ind = torch.arange(batch_size, device=device)
+        
+        # Convert decode_lengths to list like CNN+LSTM does
+        # CNN+LSTM uses (caption_lengths - 1).tolist() for <EOS> token handling
+        decode_lengths = (caption_lengths - 1).tolist()
+        
+        return logits, alphas, captions, decode_lengths, sort_ind
     
     def generate_caption(
         self,
