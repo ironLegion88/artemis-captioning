@@ -1,172 +1,233 @@
 # Parallel Training Setup Guide
 
-This guide helps you set up training on a second machine for parallel hyperparameter experimentation.
+This guide helps you set up training on multiple machines for parallel hyperparameter experimentation.
 
-## Quick Setup on Second Laptop
+---
 
-### 1. Clone the Repository
+## 🖥️ SECOND LAPTOP SETUP (Intel Ultra 5 125H)
+
+### Step 1: Clone the Repository
 ```bash
 git clone https://github.com/ironLegion88/artemis-captioning.git
 cd artemis-captioning
 ```
 
-### 2. Create Virtual Environment
+### Step 2: Install UV and Create Environment
 ```bash
-# Windows
-python -m venv .venv
+# Install uv (if not already installed)
+pip install uv
+
+# Create virtual environment
+uv venv
+
+# Activate it
+# Windows:
+.venv\Scripts\activate
+# Linux/Mac:
+source .venv/bin/activate
+
+# Install dependencies
+uv pip install -r requirements.txt
+```
+
+### Step 3: Copy Required Data Files
+Copy these folders/files from the main laptop via USB, cloud, or network:
+
+```
+📁 data/
+├── 📁 processed/
+│   ├── 📁 images/           (~57 MB - 5000 pre-resized 128x128 images)
+│   │   ├── 📁 Abstract_Expressionism/
+│   │   ├── 📁 Baroque/
+│   │   └── ... (27 style folders)
+│   ├── 📁 splits/
+│   │   ├── train.json       (4000 images)
+│   │   ├── val.json         (500 images)
+│   │   └── test.json        (500 images)
+│   ├── 📁 captions/         (caption JSON files per image)
+│   └── vocabulary.json      (10000 word vocabulary)
+└── 📁 embeddings/           (optional, ~30 MB)
+    ├── glove_embeddings.npy
+    ├── word2vec_embeddings.npy
+    └── tfidf_embeddings.npy
+```
+
+**Quick Copy Command (Windows):**
+```cmd
+:: On main laptop - create zip of required data
+cd artemis-captioning
+powershell Compress-Archive -Path "data\processed", "data\embeddings" -DestinationPath "artemis_data.zip"
+:: Transfer artemis_data.zip to second laptop, then extract to artemis-captioning/data/
+```
+
+### Step 4: Verify Setup
+```bash
+# Activate environment
 .venv\Scripts\activate
 
-# Linux/Mac
-python -m venv .venv
-source .venv/bin/activate
+# Verify files
+python -c "from pathlib import Path; imgs=list(Path('data/processed/images').rglob('*.jpg')); print(f'Images: {len(imgs)}')"
+# Expected output: Images: 5000
+
+# Verify vocabulary
+python -c "import json; v=json.load(open('data/processed/vocabulary.json')); print(f'Vocab size: {v[\"vocab_size\"]}')"
+# Expected output: Vocab size: 10000
+
+# Test import
+python -c "from utils.data_loader import create_dataloaders; print('✓ All imports OK')"
 ```
 
-### 3. Install Dependencies
+### Step 5: Start Training
 ```bash
-pip install -r requirements.txt
+# Train all 3 configurations sequentially (recommended)
+python scripts/train_second_laptop.py --all
+
+# OR train specific configuration
+python scripts/train_second_laptop.py --config 1   # CNN+LSTM Standard (30 epochs)
+python scripts/train_second_laptop.py --config 2   # ViT Compact (30 epochs)
+python scripts/train_second_laptop.py --config 3   # CNN+LSTM High LR (25 epochs)
 ```
 
-### 4. Copy Data Files
-You'll need to copy these from your main laptop (they're not in git):
-- `data/raw/wikiart/` - Original WikiArt images (needed for preprocessing)
-- `data/raw/artemis/` - ArtEmis CSV files
-- `data/processed/` - Preprocessed data (splits, vocabulary, images)
-- `data/embeddings/` - Pretrained embeddings (optional)
+**Expected Training Time on Intel Ultra 5 125H:**
+- Config 1: ~4-5 hours (30 epochs × 5000 images)
+- Config 2: ~3-4 hours (30 epochs × 5000 images, ViT faster)
+- Config 3: ~3-4 hours (25 epochs × 5000 images)
+- **Total: ~10-13 hours for all 3 models**
 
-**Option A: Copy preprocessed data (recommended, ~60 MB for images)**
+---
+
+## ☁️ GOOGLE COLAB SETUP (T4 GPU)
+
+### Step 1: Upload Data to Google Drive
+
+On your main laptop, create a zip with required data:
 ```bash
-# Copy these folders from your main laptop:
-# - data/processed/images/     (128x128 pre-resized images, ~57 MB)
-# - data/processed/splits/     (train/val/test JSON files)
-# - data/processed/vocabulary.json
-# - data/embeddings/           (optional)
+cd artemis-captioning
+
+# Create data package for Colab (~100 MB total)
+powershell Compress-Archive -Path "data\processed", "data\embeddings", "utils", "models", "train.py" -DestinationPath "colab_package.zip"
 ```
 
-**Option B: Re-run full preprocessing** (requires raw data)
+Upload `colab_package.zip` to Google Drive and extract it to:
+```
+Google Drive/
+└── artemis-captioning/
+    ├── data/
+    │   ├── processed/
+    │   │   ├── images/      (5000 preprocessed images)
+    │   │   ├── splits/
+    │   │   ├── captions/
+    │   │   └── vocabulary.json
+    │   └── embeddings/
+    ├── utils/
+    ├── models/
+    └── train.py
+```
+
+### Step 2: Open Colab Notebook
+1. Go to https://colab.research.google.com
+2. Upload `notebooks/Colab_Multi_Model_Training.ipynb` or open from Drive
+3. **Enable GPU**: Runtime → Change runtime type → T4 GPU
+
+### Step 3: Run the Notebook
+1. Run all setup cells (GPU check, mount Drive, copy data)
+2. Select which model to train (1, 2, or 3)
+3. Run training cell
+
+**Colab Configurations:**
+| Config | Model | Images | Epochs | Est. Time |
+|--------|-------|--------|--------|-----------|
+| colab_cnn_large | CNN+LSTM (512 embed, 1024 hidden) | 15000 | 50 | ~3-4 hours |
+| colab_vit_standard | ViT (256 embed, 6 layers) | 15000 | 50 | ~2-3 hours |
+| colab_cnn_glove | CNN+LSTM + GloVe | 15000 | 40 | ~2-3 hours |
+
+### Step 4: Save Results
+Results are automatically saved to Google Drive:
+- `outputs/colab_{name}/training_history.json`
+- `checkpoints/colab_{name}/best_model.pth`
+
+---
+
+## 📋 QUICK REFERENCE
+
+### What to Copy Where
+
+| Destination | Required Files | Size |
+|-------------|---------------|------|
+| Second Laptop | `data/processed/images/`, `data/processed/splits/`, `data/processed/captions/`, `data/processed/vocabulary.json`, `data/embeddings/` | ~90 MB |
+| Google Colab | Same as above + `utils/`, `models/`, `train.py` | ~100 MB |
+
+### Training Scripts
+
+| Location | Script | Configs | Images | Epochs |
+|----------|--------|---------|--------|--------|
+| Main Laptop | `scripts/train_variations.py` | 5 configs | 3000 | 15-25 |
+| Second Laptop | `scripts/train_second_laptop.py` | 3 configs | 5000 | 25-30 |
+| Google Colab | `notebooks/Colab_Multi_Model_Training.ipynb` | 3 configs | 15000 | 40-50 |
+
+### Verify Data is Complete
 ```bash
-# 1. Copy raw data first:
-#    - data/raw/wikiart/
-#    - data/raw/artemis/
+# Run this on any machine after copying data
+python -c "
+from pathlib import Path
+import json
 
-# 2. Run preprocessing:
-python scripts/analyze_dataset.py
-python scripts/create_splits.py
-python scripts/preprocess_images.py   # Resizes images to 128x128
+# Check images
+imgs = list(Path('data/processed/images').rglob('*.jpg'))
+print(f'✓ Images: {len(imgs)}')
+
+# Check splits
+for split in ['train', 'val', 'test']:
+    data = json.load(open(f'data/processed/splits/{split}.json'))
+    print(f'✓ {split}: {len(data)} samples')
+
+# Check vocabulary
+vocab = json.load(open('data/processed/vocabulary.json'))
+print(f'✓ Vocabulary: {vocab[\"vocab_size\"]} words')
+
+print('\\n✅ All data verified!')
+"
 ```
 
-### 5. Verify Setup
+---
+
+## 📊 COLLECTING RESULTS
+
+After training completes on all machines, copy back:
+
+### From Second Laptop
+```
+checkpoints/laptop2_*/          → Main laptop checkpoints/
+outputs/experiments/laptop2_*/  → Main laptop outputs/experiments/
+```
+
+### From Google Colab (Drive)
+```
+checkpoints/colab_*/            → Main laptop checkpoints/
+outputs/colab_*/                → Main laptop outputs/
+```
+
+### Compare Results
 ```bash
-# Check that preprocessed images exist
-python -c "from pathlib import Path; print('Images:', len(list(Path('data/processed/images').rglob('*.jpg'))))"
-# Should print: Images: 5000
+python scripts/predict.py --list-models
 ```
 
-## Available Training Configurations
+---
 
-The `train_hyperparameter.py` script has 6 predefined configurations:
-
-| Config | Model | Learning Rate | Batch Size | Description |
-|--------|-------|--------------|------------|-------------|
-| 1 | CNN+LSTM | 5e-5 | 8 | Low LR, small batch (stable) |
-| 2 | CNN+LSTM | 5e-4 | 32 | High LR, large batch (fast) |
-| 3 | ViT | 1e-4 | 16 | Standard ViT configuration |
-| 4 | ViT | 5e-5 | 8 | Larger capacity ViT |
-| 5 | CNN+LSTM | 1e-4 | 16 | Larger capacity CNN+LSTM |
-| 6 | CNN+LSTM | 1e-4 | 16 | CNN+LSTM with GloVe embeddings |
-
-## Recommended Parallel Strategy
-
-### Laptop 1 (Your Current Machine)
-Run configurations 1, 3, 5:
-```bash
-# In terminal 1
-python scripts/train_hyperparameter.py --config 1 --epochs 30
-
-# In terminal 2 (after config 1 finishes, or if you have resources)
-python scripts/train_hyperparameter.py --config 3 --epochs 30
-
-# In terminal 3
-python scripts/train_hyperparameter.py --config 5 --epochs 30
-```
-
-### Laptop 2 (Second Machine)
-Run configurations 2, 4, 6:
-```bash
-# In terminal 1
-python scripts/train_hyperparameter.py --config 2 --epochs 30
-
-# In terminal 2
-python scripts/train_hyperparameter.py --config 4 --epochs 30
-
-# In terminal 3
-python scripts/train_hyperparameter.py --config 6 --epochs 30
-```
-
-## Custom Configurations
-
-You can also run with custom hyperparameters:
-
-```bash
-python scripts/train_hyperparameter.py --config custom \
-    --model cnn_lstm \
-    --lr 0.0003 \
-    --batch_size 24 \
-    --embed_dim 384 \
-    --hidden_dim 768 \
-    --dropout 0.35 \
-    --epochs 30 \
-    --experiment_name "custom_experiment_1"
-```
-
-### Custom Options
-- `--model`: `cnn_lstm` or `vit`
-- `--lr`: Learning rate (e.g., 1e-4, 5e-5, 3e-4)
-- `--batch_size`: 8, 16, 24, 32 (adjust based on RAM)
-- `--embed_dim`: 256, 384, 512
-- `--hidden_dim`: 512, 768, 1024
-- `--dropout`: 0.1 to 0.5
-- `--embedding_type`: `glove`, `word2vec`, `tfidf`, or omit for random init
-- `--num_images`: Number of images per epoch (default 3000)
-- `--epochs`: Number of training epochs
-
-## Training Time Estimates
-
-On CPU (i5/i7 laptop) with preprocessed images:
-- ~2.5-3 hours for 30 epochs with ~3000 images (20-30% faster with pre-resized images)
-- ViT is slightly faster than CNN+LSTM per batch
-
-On GPU (if available):
-- ~30-60 minutes for same configuration
-
-## Monitoring and Results
-
-Each experiment creates:
-- `outputs/experiments/{experiment_name}/config.json` - Configuration used
-- `outputs/experiments/{experiment_name}/training_history.json` - Training metrics
-- `checkpoints/{experiment_name}/best_model.pth` - Best model checkpoint
-- `checkpoints/{experiment_name}/latest_checkpoint.pth` - Latest checkpoint
-
-## Combining Results
-
-After training on both laptops, copy the results back:
-1. Copy `outputs/experiments/` folders from second laptop
-2. Copy `checkpoints/` folders from second laptop
-3. Compare results to find best hyperparameters
-
-## Troubleshooting
+## 🔧 TROUBLESHOOTING
 
 ### Out of Memory
-- Reduce `--batch_size` to 8 or 4
-- Reduce `--num_images` to 1000
+- Reduce batch_size (try 8 or even 4)
+- Reduce num_images in config
 
 ### Slow Training
-- Ensure preprocessed images exist in `data/processed/images/`
-- Run `python scripts/preprocess_images.py` if missing
-- Increase `--batch_size` if RAM allows
-- Use GPU if available (CUDA will be auto-detected)
+- Ensure `data/processed/images/` exists (preprocessed 128x128)
+- Larger batch_size if RAM allows
 
-### Missing Files
-- Ensure `data/processed/` is properly copied
-- Check that `data/processed/vocabulary.json` exists
-- Check that `data/processed/images/` has 5000 images
-- Run `python scripts/preprocess_images.py` to create resized images
+### Missing Files Error
+- Re-run verification script above
+- Ensure all data folders copied correctly
+
+### Colab Disconnects
+- Results auto-save to Drive every 5 epochs
+- Resume from latest checkpoint if disconnected
