@@ -238,12 +238,13 @@ def train_config(config_num):
     print(f"Device: {device}")
     print(f"Parameters: {total_params:,}")
     
-    # Create trainer
+    # Create trainer (learning_rate goes in __init__)
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         text_preprocessor=text_proc,
+        learning_rate=config['learning_rate'],
         checkpoint_dir=checkpoint_dir,
         output_dir=output_dir
     )
@@ -254,10 +255,7 @@ def train_config(config_num):
     print("=" * 70)
     
     start_time = time.time()
-    history = trainer.train(
-        epochs=config['epochs'],
-        learning_rate=config['learning_rate']
-    )
+    history = trainer.train(num_epochs=config['epochs'])
     duration = time.time() - start_time
     
     # Save results
@@ -268,6 +266,10 @@ def train_config(config_num):
         "num_images": config['num_images'],
         "epochs": config['epochs'],
         "parameters": total_params,
+        "final_train_loss": history['train_loss'][-1] if history['train_loss'] else None,
+        "final_val_loss": history['val_loss'][-1] if history['val_loss'] else None,
+        "best_val_loss": min(history['val_loss']) if history['val_loss'] else None,
+        "best_bleu": max(history['val_bleu']) if history['val_bleu'] else None,
         "duration_minutes": duration / 60,
         "timestamp": datetime.now().isoformat(),
     }
@@ -279,6 +281,11 @@ def train_config(config_num):
     print(f"TRAINING COMPLETE: {config_name}")
     print("=" * 70)
     print(f"Duration: {duration/60:.1f} minutes ({duration/3600:.2f} hours)")
+    if history['val_loss']:
+        print(f"Final train loss: {history['train_loss'][-1]:.4f}")
+        print(f"Final val loss: {history['val_loss'][-1]:.4f}")
+        print(f"Best val loss: {min(history['val_loss']):.4f}")
+        print(f"Best BLEU: {max(history['val_bleu']):.4f}")
     print(f"Results saved to: {output_dir}")
     
     return results
