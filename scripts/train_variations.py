@@ -160,7 +160,8 @@ def train_config(config_num):
     
     # Load vocabulary using TextPreprocessor
     vocab_path = "data/processed/vocabulary.json"
-    text_proc = TextPreprocessor.load_vocabulary(vocab_path)
+    text_proc = TextPreprocessor()
+    text_proc.load_vocabulary(vocab_path)
     vocab_size = text_proc.vocab_size
     print(f"\n✓ Vocabulary loaded from: {vocab_path}")
     print(f"  - Vocabulary size: {vocab_size}")
