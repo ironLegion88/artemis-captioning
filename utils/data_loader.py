@@ -283,6 +283,10 @@ def create_data_loaders(
     return data_loaders
 
 
+# Alias for backward compatibility
+create_dataloaders = create_data_loaders
+
+
 def test_data_loader():
     """
     Test the DataLoader with a small batch.
