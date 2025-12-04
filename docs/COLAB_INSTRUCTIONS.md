@@ -9,13 +9,17 @@ Create a folder called `artemis-captioning` in your Google Drive and upload the 
 artemis-captioning/
 ├── data/
 │   ├── processed/
+│   │   ├── images/           # Pre-resized 128x128 images (~57 MB) - RECOMMENDED
+│   │   │   ├── Impressionism/
+│   │   │   ├── Realism/
+│   │   │   └── ... (style folders)
 │   │   ├── vocabulary.json
 │   │   └── splits/
 │   │       ├── train.json
 │   │       ├── val.json
 │   │       └── test.json
 │   └── raw/
-│       └── wikiart/          (all image folders)
+│       └── wikiart/          # Original images (optional if using preprocessed)
 ├── models/
 │   ├── __init__.py
 │   ├── cnn_lstm.py
@@ -29,31 +33,51 @@ artemis-captioning/
 │   ├── image_preprocessing.py
 │   ├── text_preprocessing.py
 │   └── visualization.py
+├── scripts/
+│   └── preprocess_images.py  # For creating preprocessed images
 └── train.py
 ```
 
+### Preprocessing Images (Recommended - Do This First!)
+
+Before uploading to Colab, run the preprocessing script locally:
+```bash
+python scripts/preprocess_images.py
+```
+
+This creates `data/processed/images/` with all 5,000 images pre-resized to 128x128.
+- Takes ~30-60 seconds locally
+- Saves ~57 MB (much smaller than raw images)
+- Makes Colab training ~20-30% faster
+
 ### Upload Steps:
 
-1. **Zip the data folder** (to speed up upload):
+1. **Run preprocessing locally first** (optional but recommended):
+   ```bash
+   python scripts/preprocess_images.py
+   ```
+
+2. **Zip the data folder** (to speed up upload):
    ```
    # In your project directory, create a zip:
    # Right-click on 'data' folder → Send to → Compressed (zipped) folder
+   # OR just zip data/processed/ if you don't need raw images
    ```
 
-2. **Upload to Google Drive**:
+3. **Upload to Google Drive**:
    - Go to drive.google.com
    - Create folder: `artemis-captioning`
-   - Upload: `data.zip`, `models/`, `utils/`, `train.py`
+   - Upload: `data.zip`, `models/`, `utils/`, `scripts/`, `train.py`
    - Extract `data.zip` in Google Drive
 
-3. **Open the Colab notebook**:
+4. **Open the Colab notebook**:
    - Upload `notebooks/Colab_Training.ipynb` to Colab
    - Or open directly from Drive
 
-4. **Set runtime to GPU**:
+5. **Set runtime to GPU**:
    - Runtime → Change runtime type → T4 GPU
 
-5. **Run all cells in order**
+6. **Run all cells in order**
 
 ## Estimated Training Time on T4 GPU
 

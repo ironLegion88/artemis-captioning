@@ -28,19 +28,37 @@ pip install -r requirements.txt
 
 ### 4. Copy Data Files
 You'll need to copy these from your main laptop (they're not in git):
-- `data/processed/` - All processed images and captions
+- `data/raw/wikiart/` - Original WikiArt images (needed for preprocessing)
+- `data/raw/artemis/` - ArtEmis CSV files
+- `data/processed/` - Preprocessed data (splits, vocabulary, images)
 - `data/embeddings/` - Pretrained embeddings (optional)
 
-**Option A: Use a USB drive or network share**
+**Option A: Copy preprocessed data (recommended, ~60 MB for images)**
 ```bash
-# Copy the entire data folder from your main laptop
+# Copy these folders from your main laptop:
+# - data/processed/images/     (128x128 pre-resized images, ~57 MB)
+# - data/processed/splits/     (train/val/test JSON files)
+# - data/processed/vocabulary.json
+# - data/embeddings/           (optional)
 ```
 
-**Option B: Re-run data processing** (slower but works independently)
+**Option B: Re-run full preprocessing** (requires raw data)
 ```bash
-# Download wikiart images and artemis captions, then run:
+# 1. Copy raw data first:
+#    - data/raw/wikiart/
+#    - data/raw/artemis/
+
+# 2. Run preprocessing:
 python scripts/analyze_dataset.py
 python scripts/create_splits.py
+python scripts/preprocess_images.py   # Resizes images to 128x128
+```
+
+### 5. Verify Setup
+```bash
+# Check that preprocessed images exist
+python -c "from pathlib import Path; print('Images:', len(list(Path('data/processed/images').rglob('*.jpg'))))"
+# Should print: Images: 5000
 ```
 
 ## Available Training Configurations
@@ -113,8 +131,8 @@ python scripts/train_hyperparameter.py --config custom \
 
 ## Training Time Estimates
 
-On CPU (i5/i7 laptop):
-- ~3-4 hours for 30 epochs with ~3000 images
+On CPU (i5/i7 laptop) with preprocessed images:
+- ~2.5-3 hours for 30 epochs with ~3000 images (20-30% faster with pre-resized images)
 - ViT is slightly faster than CNN+LSTM per batch
 
 On GPU (if available):
@@ -142,10 +160,13 @@ After training on both laptops, copy the results back:
 - Reduce `--num_images` to 1000
 
 ### Slow Training
+- Ensure preprocessed images exist in `data/processed/images/`
+- Run `python scripts/preprocess_images.py` if missing
 - Increase `--batch_size` if RAM allows
 - Use GPU if available (CUDA will be auto-detected)
 
 ### Missing Files
 - Ensure `data/processed/` is properly copied
 - Check that `data/processed/vocabulary.json` exists
-- Run `python scripts/analyze_dataset.py` if needed
+- Check that `data/processed/images/` has 5000 images
+- Run `python scripts/preprocess_images.py` to create resized images

@@ -26,6 +26,7 @@ import numpy as np
 from utils.constants import (
     SPLITS_DIR,
     WIKIART_DIR,
+    PROCESSED_IMAGES_DIR,
     BATCH_SIZE,
     NUM_WORKERS,
     IMAGE_SIZE,
@@ -59,14 +60,23 @@ class ArtEmisDataset(Dataset):
         text_preprocessor: TextPreprocessor,
         image_preprocessor: Optional[ImagePreprocessor] = None,
         is_train: bool = False,
-        max_captions_per_image: Optional[int] = None
+        max_captions_per_image: Optional[int] = None,
+        use_preprocessed: bool = True
     ):
         """Initialize the dataset."""
         self.split_file = Path(split_file)
         self.text_preprocessor = text_preprocessor
-        self.image_preprocessor = image_preprocessor or ImagePreprocessor()
         self.is_train = is_train
         self.max_captions_per_image = max_captions_per_image
+        
+        # Check if preprocessed images are available
+        self.use_preprocessed = use_preprocessed and PROCESSED_IMAGES_DIR.exists() and any(PROCESSED_IMAGES_DIR.iterdir())
+        
+        # Create image preprocessor with skip_resize if using preprocessed images
+        if image_preprocessor is not None:
+            self.image_preprocessor = image_preprocessor
+        else:
+            self.image_preprocessor = ImagePreprocessor(skip_resize=self.use_preprocessed)
         
         # Load split data
         with open(self.split_file, 'r', encoding='utf-8') as f:
@@ -116,8 +126,11 @@ class ArtEmisDataset(Dataset):
         style = sample['style']
         caption_text = sample['caption']
         
-        # Construct image path
-        image_path = WIKIART_DIR / style / f"{painting_name}.jpg"
+        # Construct image path - use preprocessed images if available
+        if self.use_preprocessed:
+            image_path = PROCESSED_IMAGES_DIR / style / f"{painting_name}.jpg"
+        else:
+            image_path = WIKIART_DIR / style / f"{painting_name}.jpg"
         
         # Load and preprocess image
         try:

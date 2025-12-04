@@ -54,7 +54,8 @@ class ImagePreprocessor:
         self, 
         image_size: Tuple[int, int] = IMAGE_SIZE,
         normalize: bool = True,
-        augment: bool = False
+        augment: bool = False,
+        skip_resize: bool = False
     ):
         """
         Initialize the ImagePreprocessor.
@@ -63,10 +64,12 @@ class ImagePreprocessor:
             image_size: Target image size as (height, width). Default from constants.
             normalize: Whether to normalize with ImageNet statistics. Default True.
             augment: Whether to apply data augmentation during training. Default False.
+            skip_resize: If True, skip resizing (for pre-resized images). Default False.
         """
         self.image_size = image_size
         self.normalize = normalize
         self.augment = augment
+        self.skip_resize = skip_resize
         
         # Build transformation pipelines
         self.train_transform = self._build_train_transform()
@@ -86,8 +89,9 @@ class ImagePreprocessor:
         """
         transform_list = []
         
-        # Resize to target size
-        transform_list.append(transforms.Resize(self.image_size))
+        # Resize to target size (skip if using pre-resized images)
+        if not self.skip_resize:
+            transform_list.append(transforms.Resize(self.image_size))
         
         # Data augmentation (optional)
         if self.augment:
@@ -128,10 +132,13 @@ class ImagePreprocessor:
         Returns:
             Composed transformation pipeline for validation/testing
         """
-        transform_list = [
-            transforms.Resize(self.image_size),
-            transforms.ToTensor()
-        ]
+        transform_list = []
+        
+        # Resize to target size (skip if using pre-resized images)
+        if not self.skip_resize:
+            transform_list.append(transforms.Resize(self.image_size))
+        
+        transform_list.append(transforms.ToTensor())
         
         if self.normalize:
             transform_list.append(
