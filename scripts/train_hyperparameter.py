@@ -249,11 +249,11 @@ def main():
     
     # Load vocabulary
     vocab_file = "data/processed/vocabulary.json"
-    with open(vocab_file, 'r') as f:
+    with open(vocab_file, 'r', encoding='utf-8') as f:
         vocab_data = json.load(f)
     vocab_size = vocab_data['vocab_size']
-    word_to_idx = vocab_data['word_to_idx']
-    idx_to_word = {int(k): v for k, v in vocab_data['idx_to_word'].items()}
+    word_to_idx = vocab_data['word2idx']
+    idx_to_word = {int(k): v for k, v in vocab_data['idx2word'].items()}
     
     print(f"\nVocabulary size: {vocab_size}")
     

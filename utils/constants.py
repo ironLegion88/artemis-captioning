@@ -58,7 +58,7 @@ VAL_RATIO = 0.1
 TEST_RATIO = 0.1
 
 # Dataset subset size (for memory constraints)
-NUM_IMAGES_SUBSET = 5000  # Select 5,000 images from 81,444 total
+NUM_IMAGES_SUBSET = 15000  # Select 5,000 images from 81,444 total
 MIN_CAPTIONS_PER_IMAGE = 3  # Ensure each image has at least 3 captions
 
 # Training hyperparameters
