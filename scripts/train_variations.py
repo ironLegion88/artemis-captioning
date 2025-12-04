@@ -197,23 +197,23 @@ def train_config(config_num):
     print("=" * 70)
     
     if config['model_type'] == 'cnn_lstm':
-        from models.cnn_lstm import ImageCaptioningModel
-        model = ImageCaptioningModel(
-            embed_dim=config['embed_dim'],
-            attention_dim=config['attention_dim'],
-            decoder_dim=config['hidden_dim'],
-            vocab_size=vocab_size,
-            encoder_dim=2048,
-            dropout=config['dropout'],
-            pretrained_encoder=True
-        )
+        from models.cnn_lstm import create_model
         
         # Load pretrained embeddings if specified
         embedding_type = config.get('embedding_type')
+        embeddings = None
         if embedding_type:
             embeddings = load_embeddings(embedding_type)
-            if embeddings is not None:
-                model.decoder.embedding.weight.data.copy_(embeddings)
+        
+        model = create_model(
+            embedding_matrix=embeddings,
+            vocab_size=vocab_size,
+            embed_dim=config['embed_dim'],
+            decoder_dim=config['hidden_dim'],
+            attention_dim=config['attention_dim'],
+            dropout=config['dropout'],
+            pretrained_cnn=True
+        )
     else:
         from models.vision_transformer import VisionTransformerCaptioning
         patch_size = config.get('patch_size', 16)
