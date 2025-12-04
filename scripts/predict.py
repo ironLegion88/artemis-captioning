@@ -418,74 +418,321 @@ class CaptionGenerator:
         return captions
 
 
-def main():
-    """Demo inference on sample images."""
+def list_available_models():
+    """List all available model checkpoints with their training info."""
+    print("\n" + "=" * 70)
+    print("AVAILABLE MODEL CHECKPOINTS")
     print("=" * 70)
-    print("IMAGE CAPTIONING INFERENCE")
-    print("=" * 70)
     
-    # Create generator
-    print("\n✓ Loading model...")
-    
-    # Check for checkpoint
-    checkpoint_path = CHECKPOINTS_DIR / 'best_model.pth'
-    if not checkpoint_path.exists():
-        checkpoint_path = CHECKPOINTS_DIR / 'test' / 'best_model.pth'
-    
-    if not checkpoint_path.exists():
-        print("  - No checkpoint found, using untrained model")
-        checkpoint_path = None
-    
-    generator = CaptionGenerator(
-        model_type='cnn_lstm',
-        checkpoint_path=str(checkpoint_path) if checkpoint_path else None,
-        device=DEVICE
-    )
-    
-    # Find sample images
-    print("\n✓ Looking for sample images...")
-    from utils.constants import WIKIART_DIR
-    
-    sample_images = []
-    for style_dir in WIKIART_DIR.iterdir():
-        if style_dir.is_dir():
-            for img_path in style_dir.iterdir():
-                if img_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
-                    sample_images.append(img_path)
-                    if len(sample_images) >= 3:
-                        break
-        if len(sample_images) >= 3:
-            break
-    
-    if not sample_images:
-        print("  - No sample images found")
+    if not CHECKPOINTS_DIR.exists():
+        print("\nNo checkpoints directory found!")
         return
     
-    print(f"  - Found {len(sample_images)} sample images")
-    
-    # Generate captions
-    print("\n✓ Generating captions...")
-    for img_path in sample_images:
-        print(f"\n  Image: {img_path.name}")
-        
-        # Greedy decoding
-        caption, alphas = generator.generate_caption(img_path)
-        print(f"    Greedy: {caption}")
-        
-        # Beam search
-        try:
-            beam_results = generator.generate_caption_beam_search(
-                img_path, beam_size=3
-            )
-            print(f"    Beam search:")
-            for i, (cap, score) in enumerate(beam_results[:3]):
-                print(f"      {i+1}. {cap} (score: {score:.2f})")
-        except Exception as e:
-            print(f"    Beam search error: {e}")
+    for model_dir in sorted(CHECKPOINTS_DIR.iterdir()):
+        if model_dir.is_dir():
+            checkpoints = list(model_dir.glob("*.pth"))
+            if checkpoints:
+                print(f"\n📁 {model_dir.name}/")
+                
+                # Check for training history/results
+                results_paths = [
+                    Path(f"outputs/{model_dir.name}/training_results.json"),
+                    Path(f"outputs/{model_dir.name}/results.json"),
+                    Path(f"outputs/{model_dir.name}/training_history.json"),
+                ]
+                
+                for results_path in results_paths:
+                    if results_path.exists():
+                        try:
+                            with open(results_path, encoding='utf-8') as f:
+                                results = json.load(f)
+                            if 'best_bleu' in results:
+                                print(f"   BLEU: {results['best_bleu']:.4f}")
+                            if 'best_val_loss' in results:
+                                print(f"   Val Loss: {results['best_val_loss']:.4f}")
+                            if 'total_epochs' in results:
+                                print(f"   Epochs: {results['total_epochs']}")
+                            if 'model_type' in results:
+                                print(f"   Model: {results['model_type']}")
+                            break
+                        except Exception as e:
+                            pass
+                
+                for cp in sorted(checkpoints):
+                    size_mb = cp.stat().st_size / (1024 * 1024)
+                    marker = "⭐" if "best" in cp.name.lower() else "  "
+                    print(f"   {marker} {cp.name} ({size_mb:.1f} MB)")
+
+
+def run_demo(generator):
+    """Run demo with sample images from the dataset."""
+    import random
     
     print("\n" + "=" * 70)
-    print("✅ INFERENCE COMPLETE")
+    print("DEMO: CAPTION GENERATION")
     print("=" * 70)
+    
+    # Find sample images
+    from utils.constants import WIKIART_DIR
+    processed_images = PROCESSED_DIR / 'images'
+    
+    sample_images = []
+    
+    # Try processed images first (smaller, faster to load)
+    if processed_images.exists():
+        for style_dir in processed_images.iterdir():
+            if style_dir.is_dir():
+                images = list(style_dir.glob("*.jpg"))[:3]
+                sample_images.extend(images)
+                if len(sample_images) >= 10:
+                    break
+    
+    # Fallback to raw images
+    if not sample_images and WIKIART_DIR.exists():
+        for style_dir in WIKIART_DIR.iterdir():
+            if style_dir.is_dir():
+                images = list(style_dir.glob("*.jpg"))[:3]
+                sample_images.extend(images)
+                if len(sample_images) >= 10:
+                    break
+    
+    if not sample_images:
+        print("\n❌ No sample images found in data/processed/images or data/raw/wikiart")
+        return
+    
+    # Select random samples
+    samples = random.sample(sample_images, min(5, len(sample_images)))
+    
+    print(f"\n✓ Generating captions for {len(samples)} random images...\n")
+    
+    for i, img_path in enumerate(samples, 1):
+        style = img_path.parent.name.replace('_', ' ')
+        print(f"\n{'─' * 60}")
+        print(f"🎨 Image {i}: {img_path.name}")
+        print(f"   Style: {style}")
+        
+        try:
+            # Greedy caption
+            caption, alphas = generator.generate_caption(img_path)
+            print(f"\n   📝 Generated Caption:")
+            print(f"   \"{caption}\"")
+            
+            # Beam search alternatives
+            try:
+                beam_results = generator.generate_caption_beam_search(img_path, beam_size=3)
+                if len(beam_results) > 1:
+                    print(f"\n   🔍 Alternative captions (beam search):")
+                    for j, (cap, score) in enumerate(beam_results[:3], 1):
+                        print(f"      {j}. \"{cap}\" (score: {score:.2f})")
+            except Exception:
+                pass  # Skip beam search if it fails
+                
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+    
+    print(f"\n{'─' * 60}")
+    print("✅ Demo complete!")
+
+
+def interactive_mode(generator):
+    """Run interactive caption generation session."""
+    print("\n" + "=" * 70)
+    print("INTERACTIVE CAPTION GENERATION")
+    print("=" * 70)
+    print("\nCommands:")
+    print("  - Enter an image path to generate caption")
+    print("  - Type 'demo' to run demo with sample images")
+    print("  - Type 'beam' to toggle beam search (currently OFF)")
+    print("  - Type 'quit' or 'exit' to exit")
+    print("=" * 70)
+    
+    use_beam_search = False
+    
+    while True:
+        try:
+            user_input = input("\n🖼️  Image path: ").strip()
+            
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print("\n👋 Goodbye!")
+                break
+            
+            if user_input.lower() == 'demo':
+                run_demo(generator)
+                continue
+            
+            if user_input.lower() == 'beam':
+                use_beam_search = not use_beam_search
+                status = "ON" if use_beam_search else "OFF"
+                print(f"   Beam search: {status}")
+                continue
+            
+            if not os.path.exists(user_input):
+                print(f"   ❌ File not found: {user_input}")
+                print("   💡 Tip: Use full path like 'data/processed/images/Baroque/image.jpg'")
+                continue
+            
+            print("\n   ⏳ Generating caption...")
+            
+            if use_beam_search:
+                beam_results = generator.generate_caption_beam_search(user_input, beam_size=5)
+                print(f"\n   📝 Beam search results:")
+                for i, (cap, score) in enumerate(beam_results, 1):
+                    marker = "→" if i == 1 else " "
+                    print(f"   {marker} {i}. \"{cap}\" (score: {score:.2f})")
+            else:
+                caption, alphas = generator.generate_caption(user_input)
+                print(f"\n   📝 Generated Caption:")
+                print(f"   \"{caption}\"")
+            
+        except KeyboardInterrupt:
+            print("\n\n👋 Goodbye!")
+            break
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+
+
+def find_checkpoint(model_type: str = None, experiment_name: str = None) -> Optional[Path]:
+    """Find a suitable checkpoint file."""
+    # Priority order for checkpoints
+    search_paths = []
+    
+    if experiment_name:
+        search_paths.append(CHECKPOINTS_DIR / experiment_name / 'best_model.pth')
+        search_paths.append(CHECKPOINTS_DIR / experiment_name / 'latest_checkpoint.pth')
+    
+    # Default search order
+    search_paths.extend([
+        CHECKPOINTS_DIR / 'local_3k' / 'best_model.pth',
+        CHECKPOINTS_DIR / 'local_3k_vit' / 'best_model.pth',
+        CHECKPOINTS_DIR / 'test_300' / 'best_model.pth',
+        CHECKPOINTS_DIR / 'best_model.pth',
+    ])
+    
+    for path in search_paths:
+        if path.exists():
+            return path
+    
+    # Search for any checkpoint
+    for cp_dir in CHECKPOINTS_DIR.iterdir():
+        if cp_dir.is_dir():
+            best = cp_dir / 'best_model.pth'
+            if best.exists():
+                return best
+    
+    return None
+
+
+def main():
+    """Main entry point with CLI argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="Image Caption Generation - Inference and Testing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/predict.py --list-models
+  python scripts/predict.py --demo
+  python scripts/predict.py --interactive
+  python scripts/predict.py --image path/to/image.jpg
+  python scripts/predict.py --model checkpoints/local_3k/best_model.pth --image image.jpg
+  python scripts/predict.py --model-type vit --experiment local_3k_vit --demo
+        """
+    )
+    
+    parser.add_argument("--list-models", action="store_true",
+                       help="List all available model checkpoints")
+    parser.add_argument("--model", type=str,
+                       help="Path to specific model checkpoint")
+    parser.add_argument("--model-type", type=str, choices=['cnn_lstm', 'vit'],
+                       default='cnn_lstm', help="Model architecture type")
+    parser.add_argument("--experiment", type=str,
+                       help="Experiment name to load checkpoint from")
+    parser.add_argument("--image", type=str,
+                       help="Path to single image for caption generation")
+    parser.add_argument("--beam-size", type=int, default=3,
+                       help="Beam search size (default: 3)")
+    parser.add_argument("--interactive", action="store_true",
+                       help="Run interactive mode")
+    parser.add_argument("--demo", action="store_true",
+                       help="Run demo with sample images")
+    
+    args = parser.parse_args()
+    
+    # List models command
+    if args.list_models:
+        list_available_models()
+        return
+    
+    # Find checkpoint
+    if args.model:
+        checkpoint_path = Path(args.model)
+        if not checkpoint_path.exists():
+            print(f"❌ Checkpoint not found: {args.model}")
+            return
+    else:
+        checkpoint_path = find_checkpoint(args.model_type, args.experiment)
+        if checkpoint_path:
+            print(f"✓ Found checkpoint: {checkpoint_path}")
+        else:
+            print("❌ No checkpoint found. Use --model to specify path or --list-models to see available.")
+            print("   Running with untrained model for testing purposes...")
+    
+    # Determine model type from checkpoint path or argument
+    model_type = args.model_type
+    if checkpoint_path and 'vit' in str(checkpoint_path).lower():
+        model_type = 'vit'
+    
+    print(f"\n{'=' * 70}")
+    print("IMAGE CAPTIONING - MODEL TESTING")
+    print(f"{'=' * 70}")
+    print(f"Model Type: {model_type.upper()}")
+    print(f"Checkpoint: {checkpoint_path if checkpoint_path else 'None (untrained)'}")
+    print(f"Device: {DEVICE}")
+    print(f"{'=' * 70}")
+    
+    # Initialize generator
+    print("\n⏳ Loading model...")
+    try:
+        generator = CaptionGenerator(
+            model_type=model_type,
+            checkpoint_path=str(checkpoint_path) if checkpoint_path else None,
+            device=DEVICE
+        )
+        print("✓ Model loaded successfully!")
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        return
+    
+    # Run appropriate mode
+    if args.demo:
+        run_demo(generator)
+    elif args.image:
+        print(f"\n🖼️  Image: {args.image}")
+        if not os.path.exists(args.image):
+            print(f"❌ Image not found: {args.image}")
+            return
+        
+        # Generate caption
+        caption, alphas = generator.generate_caption(args.image)
+        print(f"\n📝 Generated Caption:\n\"{caption}\"")
+        
+        # Beam search alternatives
+        if args.beam_size > 1:
+            print(f"\n🔍 Beam search (size={args.beam_size}):")
+            try:
+                beam_results = generator.generate_caption_beam_search(
+                    args.image, beam_size=args.beam_size
+                )
+                for i, (cap, score) in enumerate(beam_results, 1):
+                    print(f"   {i}. \"{cap}\" (score: {score:.2f})")
+            except Exception as e:
+                print(f"   Error: {e}")
+    elif args.interactive:
+        interactive_mode(generator)
+    else:
+        # Default to demo if no specific action
+        print("\n💡 No action specified. Running demo...")
+        print("   Use --help to see all options")
+        run_demo(generator)
 
 
 if __name__ == "__main__":
