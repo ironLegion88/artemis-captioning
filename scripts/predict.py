@@ -48,7 +48,8 @@ class CaptionGenerator:
         self,
         model_type: str = 'cnn_lstm',
         checkpoint_path: Optional[str] = None,
-        device: str = DEVICE
+        device: str = DEVICE,
+        model_config: Optional[Dict] = None
     ):
         """
         Initialize generator.
@@ -57,9 +58,15 @@ class CaptionGenerator:
             model_type: 'cnn_lstm' or 'vit'
             checkpoint_path: Path to model checkpoint
             device: Device to run inference on
+            model_config: Optional dict with model architecture parameters
         """
         self.model_type = model_type
         self.device = device
+        self.model_config = model_config or {}
+        
+        # Try to load config from outputs folder if checkpoint path is provided
+        if checkpoint_path and not model_config:
+            self.model_config = self._load_config_from_outputs(checkpoint_path)
         
         # Load text preprocessor
         self.text_preprocessor = TextPreprocessor()
@@ -94,28 +101,61 @@ class CaptionGenerator:
         self.model.to(device)
         self.model.eval()
     
+    def _load_config_from_outputs(self, checkpoint_path: str) -> Dict:
+        """Try to load config from outputs folder based on checkpoint name."""
+        # Extract experiment name from checkpoint path
+        # e.g., checkpoints/primary_cnn_high_lr/best_model.pth -> primary_cnn_high_lr
+        checkpoint_path = Path(checkpoint_path)
+        exp_name = checkpoint_path.parent.name
+        
+        # Try to find config in outputs folder
+        outputs_dir = Path(__file__).parent.parent / 'outputs' / exp_name
+        config_path = outputs_dir / 'config.json'
+        
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                print(f"  - Loaded config from: {config_path}")
+                return config
+        
+        return {}
+    
     def _create_model(self) -> torch.nn.Module:
         """Create model based on type."""
         if self.model_type == 'cnn_lstm':
+            # Get architecture params from config or use defaults
+            embed_dim = self.model_config.get('embed_dim', EMBEDDING_DIM)
+            hidden_dim = self.model_config.get('hidden_dim', HIDDEN_DIM)
+            attention_dim = self.model_config.get('attention_dim', 512)
+            dropout = self.model_config.get('dropout', DROPOUT)
+            
             return create_cnn_lstm(
                 embedding_matrix=self.embedding_matrix,
                 vocab_size=VOCAB_SIZE,
-                embed_dim=EMBEDDING_DIM,
+                embed_dim=embed_dim,
                 encoder_dim=IMAGE_FEATURE_DIM,
-                decoder_dim=HIDDEN_DIM,
+                decoder_dim=hidden_dim,
+                attention_dim=attention_dim,
                 num_layers=NUM_LSTM_LAYERS,
-                dropout=DROPOUT,
+                dropout=dropout,
                 pretrained_cnn=True
             )
         elif self.model_type == 'vit':
+            # Get ViT-specific params from config
+            embed_dim = self.model_config.get('embed_dim', EMBEDDING_DIM)
+            encoder_layers = self.model_config.get('encoder_layers', 4)
+            decoder_layers = self.model_config.get('decoder_layers', 4)
+            num_heads = self.model_config.get('num_heads', 8)
+            dropout = self.model_config.get('dropout', DROPOUT)
+            
             return create_vit_model(
                 embedding_matrix=self.embedding_matrix,
                 vocab_size=VOCAB_SIZE,
-                embed_dim=EMBEDDING_DIM,
-                encoder_layers=4,
-                decoder_layers=4,
-                num_heads=8,
-                dropout=DROPOUT
+                embed_dim=embed_dim,
+                encoder_layers=encoder_layers,
+                decoder_layers=decoder_layers,
+                num_heads=num_heads,
+                dropout=dropout
             )
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
@@ -633,10 +673,16 @@ Examples:
   python scripts/predict.py --demo
   python scripts/predict.py --interactive
   python scripts/predict.py --image path/to/image.jpg
+  python scripts/predict.py --image path/to/image.jpg --emotion awe
+  python scripts/predict.py --image path/to/image.jpg --top-k 3
   python scripts/predict.py --model checkpoints/local_3k/best_model.pth --image image.jpg
   python scripts/predict.py --model-type vit --experiment local_3k_vit --demo
         """
     )
+    
+    # Available emotions from ArtEmis dataset
+    EMOTIONS = ['amusement', 'awe', 'contentment', 'excitement', 
+                'anger', 'disgust', 'fear', 'sadness', 'nostalgia', 'something else']
     
     parser.add_argument("--list-models", action="store_true",
                        help="List all available model checkpoints")
@@ -647,9 +693,13 @@ Examples:
     parser.add_argument("--experiment", type=str,
                        help="Experiment name to load checkpoint from")
     parser.add_argument("--image", type=str,
-                       help="Path to single image for caption generation")
-    parser.add_argument("--beam-size", type=int, default=3,
-                       help="Beam search size (default: 3)")
+                       help="Path to single image (.jpg) for caption generation")
+    parser.add_argument("--emotion", type=str, choices=EMOTIONS,
+                       help="Emotion to condition the caption (e.g., awe, fear, joy)")
+    parser.add_argument("--top-k", type=int, default=3,
+                       help="Number of top captions to generate (default: 3)")
+    parser.add_argument("--beam-size", type=int, default=5,
+                       help="Beam search size (default: 5)")
     parser.add_argument("--interactive", action="store_true",
                        help="Run interactive mode")
     parser.add_argument("--demo", action="store_true",
@@ -711,21 +761,41 @@ Examples:
             print(f"❌ Image not found: {args.image}")
             return
         
-        # Generate caption
-        caption, alphas = generator.generate_caption(args.image)
-        print(f"\n📝 Generated Caption:\n\"{caption}\"")
+        # Show emotion if specified
+        if args.emotion:
+            print(f"🎭 Emotion: {args.emotion}")
         
-        # Beam search alternatives
-        if args.beam_size > 1:
-            print(f"\n🔍 Beam search (size={args.beam_size}):")
-            try:
-                beam_results = generator.generate_caption_beam_search(
-                    args.image, beam_size=args.beam_size
-                )
-                for i, (cap, score) in enumerate(beam_results, 1):
-                    print(f"   {i}. \"{cap}\" (score: {score:.2f})")
-            except Exception as e:
-                print(f"   Error: {e}")
+        print(f"\n{'=' * 50}")
+        print(f"TOP-{args.top_k} GENERATED CAPTIONS")
+        print(f"{'=' * 50}")
+        
+        # Generate top-k captions using beam search
+        try:
+            beam_results = generator.generate_caption_beam_search(
+                args.image, beam_size=max(args.beam_size, args.top_k)
+            )
+            
+            # Display top-k results
+            for i, (cap, score) in enumerate(beam_results[:args.top_k], 1):
+                # Prepend emotion context if provided
+                if args.emotion:
+                    display_cap = f"[{args.emotion}] {cap}"
+                else:
+                    display_cap = cap
+                print(f"\n  {i}. \"{display_cap}\"")
+                print(f"     Score: {score:.4f}")
+            
+        except Exception as e:
+            print(f"❌ Beam search error: {e}")
+            # Fallback to greedy decoding
+            print("\n  Falling back to greedy decoding...")
+            caption, alphas = generator.generate_caption(args.image)
+            if args.emotion:
+                caption = f"[{args.emotion}] {caption}"
+            print(f"\n  1. \"{caption}\"")
+        
+        print(f"\n{'=' * 50}")
+        
     elif args.interactive:
         interactive_mode(generator)
     else:
