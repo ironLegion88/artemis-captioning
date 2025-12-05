@@ -7,6 +7,7 @@ This module provides utilities for:
 - Batch inference
 - Beam search decoding
 - Visualization of attention weights
+- Visualization of generated captions
 
 Author: ArtEmis Caption Generation Project
 Date: December 2025
@@ -16,6 +17,7 @@ import os
 import sys
 import json
 import argparse
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -23,11 +25,12 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.constants import (
-    CHECKPOINTS_DIR, PROCESSED_DIR, EMBEDDINGS_DIR,
+    CHECKPOINTS_DIR, PROCESSED_DIR, EMBEDDINGS_DIR, OUTPUTS_DIR,
     VOCAB_SIZE, EMBEDDING_DIM, HIDDEN_DIM, IMAGE_FEATURE_DIM,
     NUM_LSTM_LAYERS, DROPOUT, MAX_CAPTION_LENGTH, DEVICE, IMAGE_SIZE
 )
@@ -35,6 +38,90 @@ from utils.image_preprocessing import ImagePreprocessor
 from utils.text_preprocessing import TextPreprocessor
 from models.cnn_lstm import create_model as create_cnn_lstm
 from models.vision_transformer import create_vit_model
+
+
+def visualize_caption(
+    image_path: str,
+    captions: List[Tuple[str, float]],
+    emotion: Optional[str] = None,
+    output_path: Optional[str] = None,
+    show: bool = True
+) -> Optional[str]:
+    """
+    Create a visualization of an image with its generated captions.
+    
+    Args:
+        image_path: Path to the image file
+        captions: List of (caption, score) tuples from beam search
+        emotion: Optional emotion label
+        output_path: Optional path to save the visualization
+        show: Whether to display the plot
+        
+    Returns:
+        Path to saved visualization if output_path is provided
+    """
+    fig = plt.figure(figsize=(12, 8))
+    
+    # Create grid: image on left, captions on right
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1], wspace=0.1)
+    
+    # Image subplot
+    ax_img = fig.add_subplot(gs[0])
+    try:
+        img = Image.open(image_path)
+        ax_img.imshow(img)
+    except Exception as e:
+        ax_img.text(0.5, 0.5, f"Could not load image\n{e}", 
+                   ha='center', va='center', fontsize=10)
+    ax_img.axis('off')
+    
+    # Get image name for title
+    img_name = Path(image_path).stem
+    ax_img.set_title(f"Image: {img_name}", fontsize=11, fontweight='bold', pad=10)
+    
+    # Caption subplot
+    ax_cap = fig.add_subplot(gs[1])
+    ax_cap.axis('off')
+    
+    # Build caption text (using ASCII-safe characters)
+    lines = []
+    if emotion:
+        lines.append(f"Emotion: {emotion}\n")
+    
+    lines.append("Generated Captions:\n")
+    lines.append("-" * 35 + "\n")
+    
+    for i, (caption, score) in enumerate(captions, 1):
+        # Wrap long captions
+        wrapped = textwrap.fill(caption, width=40)
+        lines.append(f"{i}. {wrapped}")
+        lines.append(f"   Score: {score:.4f}\n")
+    
+    caption_text = "\n".join(lines)
+    
+    ax_cap.text(0.05, 0.95, caption_text, 
+               transform=ax_cap.transAxes,
+               fontsize=10, fontfamily='monospace',
+               verticalalignment='top',
+               bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow', alpha=0.8))
+    
+    plt.tight_layout()
+    
+    if output_path:
+        # Create output directory if it doesn't exist
+        output_dir = Path(output_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        plt.savefig(output_path, dpi=150, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        print(f"   Visualization saved: {output_path}")
+    
+    if show:
+        plt.show()
+    else:
+        plt.close()
+    
+    return output_path if output_path else None
 
 
 class CaptionGenerator:
@@ -700,6 +787,10 @@ Examples:
                        help="Number of top captions to generate (default: 3)")
     parser.add_argument("--beam-size", type=int, default=5,
                        help="Beam search size (default: 5)")
+    parser.add_argument("--visualize", action="store_true",
+                       help="Show visualization of image with captions")
+    parser.add_argument("--save-viz", type=str,
+                       help="Path to save caption visualization image")
     parser.add_argument("--interactive", action="store_true",
                        help="Run interactive mode")
     parser.add_argument("--demo", action="store_true",
@@ -775,18 +866,42 @@ Examples:
                 args.image, beam_size=max(args.beam_size, args.top_k)
             )
             
-            # Display top-k results
-            for i, (cap, score) in enumerate(beam_results[:args.top_k], 1):
-                # Prepend emotion context if provided
+            # Prepare captions with emotion prefix
+            display_results = []
+            for cap, score in beam_results[:args.top_k]:
                 if args.emotion:
                     display_cap = f"[{args.emotion}] {cap}"
                 else:
                     display_cap = cap
-                print(f"\n  {i}. \"{display_cap}\"")
+                display_results.append((display_cap, score))
+            
+            # Display top-k results in terminal
+            for i, (cap, score) in enumerate(display_results, 1):
+                print(f"\n  {i}. \"{cap}\"")
                 print(f"     Score: {score:.4f}")
+            
+            # Visualize if requested
+            if args.visualize or args.save_viz:
+                output_path = args.save_viz
+                if not output_path and args.visualize:
+                    # Auto-generate output path
+                    output_dir = OUTPUTS_DIR / 'visualizations'
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    img_name = Path(args.image).stem
+                    output_path = str(output_dir / f'{img_name}_captions.png')
+                
+                visualize_caption(
+                    image_path=args.image,
+                    captions=display_results,
+                    emotion=args.emotion,
+                    output_path=output_path,
+                    show=args.visualize
+                )
             
         except Exception as e:
             print(f"❌ Beam search error: {e}")
+            import traceback
+            traceback.print_exc()
             # Fallback to greedy decoding
             print("\n  Falling back to greedy decoding...")
             caption, alphas = generator.generate_caption(args.image)
