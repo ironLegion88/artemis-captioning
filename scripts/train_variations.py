@@ -6,10 +6,12 @@ Trains models with ~3000 images with various hyperparameter experiments.
 
 Usage:
     python scripts/train_variations.py --config 1  # CNN+LSTM Word2Vec
-    python scripts/train_variations.py --config 2  # CNN+LSTM Low Dropout
-    python scripts/train_variations.py --config 3  # ViT Small Patches
-    python scripts/train_variations.py --config 4  # Quick CNN Test (15 epochs)
-    python scripts/train_variations.py --config 5  # Quick ViT Test (15 epochs)
+    python scripts/train_variations.py --config 2  # CNN+LSTM High LR
+    python scripts/train_variations.py --config 3  # CNN+LSTM Very High LR
+    python scripts/train_variations.py --config 4  # ViT Higher LR
+    python scripts/train_variations.py --config 5  # CNN Large Batch
+    python scripts/train_variations.py --config 6  # ViT Regularized (NEW)
+    python scripts/train_variations.py --config 7  # ViT Deep Regularized (NEW)
     python scripts/train_variations.py --list      # List all configs
 """
 
@@ -101,6 +103,41 @@ VARIATION_CONFIGS = {
         "attention_dim": 256,
         "dropout": 0.3,
         "encoder_lr_factor": 0.1,
+    },
+    # NEW ViT CONFIGS based on analysis:
+    # - ViT BLEU peaks early (epoch 6) then degrades → overfitting
+    # - Need more regularization & shorter training
+    6: {
+        "name": "primary_vit_regularized",
+        "model_type": "vit",
+        "description": "ViT Regularized - High dropout, fewer epochs, early stopping",
+        "batch_size": 16,
+        "num_images": 3000,
+        "epochs": 10,  # Stop before overfitting (peak was epoch 6)
+        "learning_rate": 1e-4,  # Original LR worked best for BLEU
+        "embed_dim": 256,
+        "num_heads": 8,
+        "encoder_layers": 4,
+        "decoder_layers": 4,
+        "mlp_ratio": 4,
+        "dropout": 0.25,  # Increased from 0.1 to combat overfitting
+        "max_length": 30,
+    },
+    7: {
+        "name": "primary_vit_deep_regularized",
+        "model_type": "vit",
+        "description": "ViT Deep Regularized - 6 layers, 384 dim, high dropout",
+        "batch_size": 12,  # Smaller batch for larger model
+        "num_images": 3000,
+        "epochs": 12,  # Short training to avoid overfitting
+        "learning_rate": 1e-4,  # Conservative LR for deep model
+        "embed_dim": 384,  # Larger embedding dimension
+        "num_heads": 8,
+        "encoder_layers": 6,  # Deeper than previous (was 4)
+        "decoder_layers": 6,
+        "mlp_ratio": 4,
+        "dropout": 0.2,  # High dropout for regularization
+        "max_length": 30,
     },
 }
 
@@ -219,14 +256,19 @@ def train_config(config_num):
     else:
         from models.vision_transformer import VisionTransformerCaptioning
         patch_size = config.get('patch_size', 16)
+        # Support both old (num_layers) and new (encoder_layers/decoder_layers) configs
+        encoder_layers = config.get('encoder_layers', config.get('num_layers', 4))
+        decoder_layers = config.get('decoder_layers', config.get('num_layers', 4))
+        mlp_ratio = config.get('mlp_ratio', 4)
+        max_length = config.get('max_length', 30)
         model = VisionTransformerCaptioning(
             vocab_size=vocab_size,
             embed_dim=config['embed_dim'],
             num_heads=config['num_heads'],
-            encoder_layers=config['num_layers'],
-            decoder_layers=config['num_layers'],
-            mlp_ratio=4,
-            max_length=30,
+            encoder_layers=encoder_layers,
+            decoder_layers=decoder_layers,
+            mlp_ratio=mlp_ratio,
+            max_length=max_length,
             dropout=config['dropout'],
             img_size=128,
             patch_size=patch_size
@@ -295,7 +337,7 @@ def train_config(config_num):
 
 def main():
     parser = argparse.ArgumentParser(description="Primary Laptop Training - Variations")
-    parser.add_argument("--config", type=int, help="Config number (1-5)")
+    parser.add_argument("--config", type=int, help="Config number (1-7)")
     parser.add_argument("--list", action="store_true", help="List available configs")
     
     args = parser.parse_args()
@@ -304,25 +346,25 @@ def main():
         print("\nAvailable Configurations for Primary Laptop:")
         print("=" * 70)
         
-        print("\n--- Full Training Runs ---")
-        for num in [1, 2, 3]:
+        print("\n--- CNN+LSTM Configs ---")
+        for num in [1, 2, 3, 5]:
             cfg = VARIATION_CONFIGS[num]
             est_time = cfg['epochs'] * 5  # ~5 min per epoch
             print(f"\n  --config {num}: {cfg['name']}")
             print(f"      {cfg['description']}")
             print(f"      Model: {cfg['model_type']}, Epochs: {cfg['epochs']}, Est: ~{est_time} min")
         
-        print("\n--- Quick Test Runs ---")
-        for num in [4, 5]:
+        print("\n--- ViT Configs (NEW - optimized based on analysis) ---")
+        for num in [4, 6, 7]:
             cfg = VARIATION_CONFIGS[num]
-            est_time = cfg['epochs'] * 5
+            est_time = cfg['epochs'] * 4  # ViT is faster
             print(f"\n  --config {num}: {cfg['name']}")
             print(f"      {cfg['description']}")
             print(f"      Model: {cfg['model_type']}, Epochs: {cfg['epochs']}, Est: ~{est_time} min")
         
         print("\nUsage:")
-        print("  python scripts/train_variations.py --config 4  # Quick test first")
-        print("  python scripts/train_variations.py --config 1  # Full Word2Vec run")
+        print("  python scripts/train_variations.py --config 6  # ViT Regularized (recommended)")
+        print("  python scripts/train_variations.py --config 7  # ViT Deep Regularized")
         return
     
     if args.config:
