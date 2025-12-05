@@ -2,12 +2,13 @@
 Second Laptop Training Script
 ==============================
 Training configurations for Intel Ultra 5 125H laptop.
-Trains 3 models with ~5000 images for ~30 epochs each.
+Trains 4 models with ~5000 images for ~30 epochs each.
 
 Usage:
     python scripts/train_second_laptop.py --config 1  # CNN+LSTM Standard
     python scripts/train_second_laptop.py --config 2  # ViT Compact
     python scripts/train_second_laptop.py --config 3  # CNN+LSTM High LR
+    python scripts/train_second_laptop.py --config 4  # ViT Deep (8 layers)
     python scripts/train_second_laptop.py --all       # Train all sequentially
 """
 
@@ -61,6 +62,19 @@ LAPTOP2_CONFIGS = {
         "learning_rate": 5e-4,
         "embed_dim": 256,
         "hidden_dim": 512,
+    },
+    4: {
+        "name": "laptop2_vit_deep",
+        "model_type": "vit",
+        "description": "ViT Deep - 8 layers, higher LR, larger embed dim",
+        "batch_size": 16,
+        "num_images": 5000,
+        "epochs": 25,
+        "learning_rate": 3e-4,  # Higher LR - 1e-4 was too slow
+        "embed_dim": 384,       # Larger embedding dimension
+        "num_layers": 8,        # Deeper - 8 layers vs 4
+        "num_heads": 8,         # More attention heads
+        "dropout": 0.15,        # Slightly higher dropout for regularization
     },
 }
 
@@ -148,7 +162,9 @@ def train_config(config_num):
             vocab_size=text_proc.vocab_size,
             embed_dim=config['embed_dim'],
             encoder_layers=config.get('num_layers', 4),
-            decoder_layers=config.get('num_layers', 4)
+            decoder_layers=config.get('num_layers', 4),
+            num_heads=config.get('num_heads', 8),
+            dropout=config.get('dropout', 0.1)
         )
     
     total_params = sum(p.numel() for p in model.parameters())
