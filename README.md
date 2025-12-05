@@ -1,24 +1,57 @@
 # ArtEmis Image Caption Generation
 
-This project implements image caption generation for artwork images using the ArtEmis dataset. Two architectures are developed and compared:
-1. CNN + LSTM model (custom CNN encoder + LSTM decoder)
-2. Vision-Language Transformer (ViT encoder + Transformer decoder)
+This project implements image captioning for artwork using the ArtEmis dataset, generating emotional captions for art images. Two architectures are implemented:
+
+1. **CNN + LSTM with Attention** (ResNet18 encoder + LSTM decoder with Bahdanau attention)
+2. **Vision Transformer (ViT)** (Custom ViT encoder + Transformer decoder)
+
+## Results Summary
+
+| Model | Best BLEU-4 | Val Loss | Notes |
+|-------|-------------|----------|-------|
+| CNN+LSTM (30 epochs) | **0.0197** | 3.845 | Best overall |
+| CNN+LSTM (15 epochs) | 0.0155 | 3.925 | Fast training |
+| ViT (12 epochs) | 0.0131 | 4.328 | With regularization |
+
+**Best Model**: `checkpoints/colab_cnn_high_lr/best_model.pth`
+
+## Quick Start - Generate Captions
+
+```bash
+# Activate environment
+.venv\Scripts\activate
+
+# Generate captions for an image
+python scripts/predict.py --model checkpoints/primary_cnn_high_lr/best_model.pth \
+                          --image path/to/your_artwork.jpg \
+                          --emotion awe \
+                          --top-k 3
+
+# Available emotions: amusement, awe, contentment, excitement, anger, disgust, fear, sadness, nostalgia, "something else"
+
+# List all available trained models
+python scripts/predict.py --list-models
+```
 
 ## Project Structure
 
 ```
 artemis-captioning/
 ├── data/
-│   ├── raw/                  # Raw datasets (not in git)
-│   ├── processed/            # Preprocessed data
-│   └── embeddings/           # Pre-trained embeddings
+│   ├── raw/                  # Raw datasets (ArtEmis CSV, WikiArt images)
+│   ├── processed/            # Preprocessed data (splits, vocabulary)
+│   │   └── images/           # Resized images 128x128)
+│   └── embeddings/           # TF-IDF embeddings
 ├── models/                   # Model architectures
+│   ├── cnn_lstm.py          # CNN+LSTM with attention
+│   └── vision_transformer.py # ViT implementation
 ├── utils/                    # Utility functions
-├── notebooks/                # Jupyter notebooks
+├── notebooks/                # Colab training notebooks
 ├── scripts/                  # Training and evaluation scripts
-├── checkpoints/              # Model checkpoints (not in git)
-├── outputs/                  # Generated outputs
-└── requirements.txt          # Dependencies
+├── checkpoints/              # Trained model checkpoints
+├── outputs/                  # Training logs and results
+└── docs/                     # Documentation
+    └── RESULTS_SUMMARY.md    # Detailed results analysis
 ```
 
 ## Setup Instructions
@@ -27,105 +60,100 @@ artemis-captioning/
 
 ```bash
 # Create virtual environment
-uv venv artemis-env
+python -m venv .venv
 
 # Activate environment (Windows)
-artemis-env\Scripts\activate
+.venv\Scripts\activate
+
+# Activate environment (Linux/Mac)
+source .venv/bin/activate
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-# Using uv add (recommended)
-uv add torch torchvision numpy pandas pillow matplotlib seaborn nltk scikit-learn gensim transformers jupyter tqdm tensorboard rouge-score
-
-# Or using pip
 pip install -r requirements.txt
 ```
 
-### 3. Download NLTK Data
+### 3. Prepare Dataset
 
 ```bash
-python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
+# Download and preprocess images
+python scripts/prepare_dataset.py
+python scripts/preprocess_images.py --num-images 15000
 ```
 
-### 4. Dataset Setup
+## Training
 
-- Place ArtEmis dataset in `data/raw/artemis/`
-- Place WikiArt images in `data/raw/wikiart/`
-
-## Execution Instructions
-
-### Preprocessing
+### Local Training (3000 images)
 
 ```bash
-python scripts/preprocessing.py --artemis-path data/raw/artemis/artemis_dataset_release_v0.csv --wikiart-path data/raw/wikiart --output-path data/processed --num-samples 5000
+# Train CNN+LSTM (high learning rate - recommended)
+python scripts/train_variations.py --config 2
+
+# Train ViT (deep regularized)
+python scripts/train_variations.py --config 7
 ```
 
-### Training
+### Colab Training (full dataset)
+
+Use the notebooks in `notebooks/`:
+- `Colab_Train_CNN_GloVe.ipynb` - Best CNN+LSTM configuration
+- `Colab_Train_ViT.ipynb` - ViT training
+
+## Inference
 
 ```bash
-# Test pipeline first
-python scripts/test_pipeline.py --samples 100 --epochs 2
-
-# Train CNN+LSTM
-python scripts/train.py --model cnn_lstm --embedding word2vec --config configs/cnn_lstm_config.json
-
-# Train Transformer
-python scripts/train.py --model transformer --config configs/transformer_config.json
+# Generate top-3 captions with beam search
+python scripts/predict.py --model checkpoints/primary_cnn_high_lr/best_model.pth \
+                          --image data/processed/images/Impressionism/claude-monet_water-lilies-1917-4.jpg \
+                          --emotion awe \
+                          --top-k 3 \
+                          --beam-size 5
 ```
 
-### Evaluation
-
-```bash
-python scripts/evaluation.py --model checkpoints/best_model.pt --test-data data/processed/test.json --output outputs/results.json
-```
-
-### Inference
-
-```bash
-python scripts/predict.py --image path/to/image.jpg --model checkpoints/best_model.pt --vocab data/processed/vocabulary.json --config configs/config.json --top-k 3
-```
-
-## Dataset Preprocessing Steps
+## Dataset Preprocessing
 
 1. **Image Preprocessing:**
-   - Resize images to 128×128 or 224×224
-   - Normalize pixel values using ImageNet statistics
+   - Resize images to 224×224
+   - Normalize using ImageNet statistics
    - Handle corrupt/missing images
 
 2. **Text Preprocessing:**
-   - Lowercase and remove punctuation
-   - Tokenize captions
+   - Lowercase and clean captions
+   - Tokenize using NLTK
    - Build vocabulary (10,000 most frequent words)
-   - Add special tokens: `<PAD>`, `<START>`, `<END>`, `<UNK>`
-   - Pad/truncate sequences to uniform length (30 tokens)
+   - Special tokens: `<PAD>`, `<START>`, `<END>`, `<UNK>`
+   - Max caption length: 30 tokens
 
 3. **Dataset Splits:**
-   - Training: 80% (4,000 images)
-   - Validation: 10% (500 images)
-   - Test: 10% (500 images)
+   - Training: 80%
+   - Validation: 10%
+   - Test: 10%
 
 ## Model Architectures
 
-### CNN + LSTM
-- **Encoder:** Custom 4-block CNN (trained from scratch)
-- **Decoder:** 2-layer LSTM with attention
-- **Embeddings:** TF-IDF, Word2Vec, or GloVe
+### CNN + LSTM with Attention
+- **Encoder:** ResNet18 (pretrained, fine-tuned)
+- **Decoder:** 2-layer LSTM with Bahdanau attention
+- **Feature Dim:** 256, Hidden Dim: 512, Attention Dim: 256
+- **Embeddings:** TF-IDF based
 
-### Vision-Language Transformer
-- **Encoder:** Vision Transformer (patch-based)
+### Vision Transformer
+- **Encoder:** Custom ViT (16×16 patches)
 - **Decoder:** Transformer decoder with cross-attention
-- **End-to-end training**
+- **Layers:** 4-6 encoder, 4 decoder
+- **Heads:** 8 attention heads
 
 ## Dependencies
 
-- Python 3.8+
+- Python 3.10+
 - PyTorch 2.0+
 - torchvision
 - NLTK
 - scikit-learn
-- gensim
+- PIL/Pillow
+- numpy, pandas
 - See `requirements.txt` for complete list
 
 ## References
@@ -133,3 +161,7 @@ python scripts/predict.py --image path/to/image.jpg --model checkpoints/best_mod
 1. Achlioptas et al., "ArtEmis: Affective Language for Visual Art", CVPR 2021
 2. Vinyals et al., "Show and Tell: A Neural Image Caption Generator", CVPR 2015
 3. Dosovitskiy et al., "An Image is Worth 16x16 Words", ICLR 2021
+
+## Documentation
+
+See `docs/RESULTS_SUMMARY.md` for detailed results analysis and training insights.
