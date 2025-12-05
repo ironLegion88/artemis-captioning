@@ -225,8 +225,8 @@ def train_config(config_num):
 
 def main():
     parser = argparse.ArgumentParser(description="Second Laptop Training Script")
-    parser.add_argument("--config", type=int, choices=[1, 2, 3],
-                       help="Configuration number (1, 2, or 3)")
+    parser.add_argument("--config", type=int, choices=[1, 2, 3, 4],
+                       help="Configuration number (1, 2, 3, or 4)")
     parser.add_argument("--all", action="store_true",
                        help="Train all configurations sequentially")
     
